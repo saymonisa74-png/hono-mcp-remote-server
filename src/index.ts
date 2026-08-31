@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
-import { createMcpHandler, withMcpAuth } from 'mcp-handler'
-import type { AuthInfo } from '@modelcontextprotocol/sdk/types.js'
+import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
 
 const app = new Hono()
@@ -8,400 +7,365 @@ const app = new Hono()
 const DISCORD_API = 'https://discord.com/api/v10'
 
 function getConfig() {
-  const token = process.env.DISCORD_BOT_TOKEN
-  const guildId = process.env.DISCORD_GUILD_ID
+const token = process.env.DISCORD_BOT_TOKEN
+const guildId = process.env.DISCORD_GUILD_ID
 
-  if (!token) throw new Error('Missing DISCORD_BOT_TOKEN')
-  if (!guildId) throw new Error('Missing DISCORD_GUILD_ID')
+if (!token) throw new Error('Missing DISCORD_BOT_TOKEN')
+if (!guildId) throw new Error('Missing DISCORD_GUILD_ID')
 
-  return { token, guildId }
+return { token, guildId }
 }
 
 async function discord(
-  path: string,
-  options: RequestInit = {}
+path: string,
+options: RequestInit = {}
 ) {
-  const { token } = getConfig()
+const { token } = getConfig()
 
-  const response = await fetch(`${DISCORD_API}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bot ${token}`,
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  })
+const response = await fetch(${DISCORD_API}${path}, {
+...options,
+headers: {
+Authorization: Bot ${token},
+'Content-Type': 'application/json',
+...(options.headers || {}),
+},
+})
 
-  const text = await response.text()
+const text = await response.text()
 
-  if (!response.ok) {
-    throw new Error(
-      `Discord API ${response.status}: ${text || response.statusText}`
-    )
-  }
+if (!response.ok) {
+throw new Error(
+Discord API ${response.status}: ${text || response.statusText}
+)
+}
 
-  return text ? JSON.parse(text) : { success: true }
+return text ? JSON.parse(text) : { success: true }
 }
 
 function result(data: unknown) {
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(data, null, 2),
-      },
-    ],
-  }
+return {
+content: [
+{
+type: 'text' as const,
+text: JSON.stringify(data, null, 2),
+},
+],
 }
-
-/* =========================================================
-   MCP SERVER
-   ========================================================= */
+}
 
 const handler = createMcpHandler(
-  (server) => {
+(server) => {
 
-    // =========================
-    // SERVER
-    // =========================
+// =========================  
+// SERVER  
+// =========================  
 
-    server.tool(
-      'get_server',
-      'Get Discord server information',
-      {},
-      async () => {
-        const { guildId } = getConfig()
-        return result(await discord(`/guilds/${guildId}`))
-      }
-    )
+server.tool(  
+  'get_server',  
+  'Get Discord server information',  
+  {},  
+  async () => {  
+    const { guildId } = getConfig()  
+    const data = await discord(`/guilds/${guildId}`)  
+    return result(data)  
+  }  
+)  
 
-    // =========================
-    // CHANNELS
-    // =========================
+// =========================  
+// CHANNELS  
+// =========================  
 
-    server.tool(
-      'list_channels',
-      'List all channels and categories',
-      {},
-      async () => {
-        const { guildId } = getConfig()
-        return result(await discord(`/guilds/${guildId}/channels`))
-      }
-    )
+server.tool(  
+  'list_channels',  
+  'List all channels and categories in the Discord server',  
+  {},  
+  async () => {  
+    const { guildId } = getConfig()  
+    const data = await discord(`/guilds/${guildId}/channels`)  
+    return result(data)  
+  }  
+)  
 
-    server.tool(
-      'create_category',
-      'Create a new Discord category',
-      {
-        name: z.string().min(1).max(100),
-      },
-      async ({ name }) => {
-        const { guildId } = getConfig()
+server.tool(  
+  'create_category',  
+  'Create a new Discord category',  
+  {  
+    name: z.string().min(1).max(100).describe('Category name'),  
+  },  
+  async ({ name }) => {  
+    const { guildId } = getConfig()  
 
-        return result(
-          await discord(`/guilds/${guildId}/channels`, {
-            method: 'POST',
-            body: JSON.stringify({
-              name,
-              type: 4,
-            }),
-          })
-        )
-      }
-    )
+    const data = await discord(`/guilds/${guildId}/channels`, {  
+      method: 'POST',  
+      body: JSON.stringify({  
+        name,  
+        type: 4,  
+      }),  
+    })  
 
-    server.tool(
-      'create_text_channel',
-      'Create a Discord text channel',
-      {
-        name: z.string().min(1).max(100),
-        category_id: z.string().optional(),
-      },
-      async ({ name, category_id }) => {
-        const { guildId } = getConfig()
+    return result(data)  
+  }  
+)  
 
-        const body: Record<string, unknown> = {
-          name,
-          type: 0,
-        }
+server.tool(  
+  'create_text_channel',  
+  'Create a Discord text channel, optionally inside a category',  
+  {  
+    name: z.string().min(1).max(100).describe('Channel name'),  
+    category_id: z  
+      .string()  
+      .optional()  
+      .describe('Category channel ID'),  
+  },  
+  async ({ name, category_id }) => {  
+    const { guildId } = getConfig()  
 
-        if (category_id) {
-          body.parent_id = category_id
-        }
+    const body: Record<string, unknown> = {  
+      name,  
+      type: 0,  
+    }  
 
-        return result(
-          await discord(`/guilds/${guildId}/channels`, {
-            method: 'POST',
-            body: JSON.stringify(body),
-          })
-        )
-      }
-    )
+    if (category_id) {  
+      body.parent_id = category_id  
+    }  
 
-    server.tool(
-      'create_voice_channel',
-      'Create a Discord voice channel',
-      {
-        name: z.string().min(1).max(100),
-        category_id: z.string().optional(),
-      },
-      async ({ name, category_id }) => {
-        const { guildId } = getConfig()
+    const data = await discord(`/guilds/${guildId}/channels`, {  
+      method: 'POST',  
+      body: JSON.stringify(body),  
+    })  
 
-        const body: Record<string, unknown> = {
-          name,
-          type: 2,
-        }
+    return result(data)  
+  }  
+)  
 
-        if (category_id) {
-          body.parent_id = category_id
-        }
+server.tool(  
+  'create_voice_channel',  
+  'Create a Discord voice channel, optionally inside a category',  
+  {  
+    name: z.string().min(1).max(100).describe('Channel name'),  
+    category_id: z  
+      .string()  
+      .optional()  
+      .describe('Category channel ID'),  
+  },  
+  async ({ name, category_id }) => {  
+    const { guildId } = getConfig()  
 
-        return result(
-          await discord(`/guilds/${guildId}/channels`, {
-            method: 'POST',
-            body: JSON.stringify(body),
-          })
-        )
-      }
-    )
+    const body: Record<string, unknown> = {  
+      name,  
+      type: 2,  
+    }  
 
-    server.tool(
-      'edit_channel',
-      'Edit a Discord channel',
-      {
-        channel_id: z.string(),
-        name: z.string().optional(),
-        category_id: z.string().nullable().optional(),
-        topic: z.string().nullable().optional(),
-      },
-      async ({
-        channel_id,
-        name,
-        category_id,
-        topic,
-      }) => {
-        const body: Record<string, unknown> = {}
+    if (category_id) {  
+      body.parent_id = category_id  
+    }  
 
-        if (name !== undefined) body.name = name
-        if (category_id !== undefined) {
-          body.parent_id = category_id
-        }
-        if (topic !== undefined) {
-          body.topic = topic
-        }
+    const data = await discord(`/guilds/${guildId}/channels`, {  
+      method: 'POST',  
+      body: JSON.stringify(body),  
+    })  
 
-        return result(
-          await discord(`/channels/${channel_id}`, {
-            method: 'PATCH',
-            body: JSON.stringify(body),
-          })
-        )
-      }
-    )
+    return result(data)  
+  }  
+)  
 
-    server.tool(
-      'delete_channel',
-      'Delete a Discord channel',
-      {
-        channel_id: z.string(),
-      },
-      async ({ channel_id }) => {
-        return result(
-          await discord(`/channels/${channel_id}`, {
-            method: 'DELETE',
-          })
-        )
-      }
-    )
+server.tool(  
+  'edit_channel',  
+  'Edit a Discord channel or move it to another category',  
+  {  
+    channel_id: z.string().describe('Channel ID'),  
+    name: z.string().optional().describe('New channel name'),  
+    category_id: z  
+      .string()  
+      .nullable()  
+      .optional()  
+      .describe('New category ID, or null to remove category'),  
+    topic: z  
+      .string()  
+      .nullable()  
+      .optional()  
+      .describe('Text channel topic'),  
+  },  
+  async ({ channel_id, name, category_id, topic }) => {  
+    const body: Record<string, unknown> = {}  
 
-    // =========================
-    // ROLES
-    // =========================
+    if (name !== undefined) body.name = name  
+    if (category_id !== undefined) body.parent_id = category_id  
+    if (topic !== undefined) body.topic = topic  
 
-    server.tool(
-      'list_roles',
-      'List all roles',
-      {},
-      async () => {
-        const { guildId } = getConfig()
-        return result(await discord(`/guilds/${guildId}/roles`))
-      }
-    )
+    const data = await discord(`/channels/${channel_id}`, {  
+      method: 'PATCH',  
+      body: JSON.stringify(body),  
+    })  
 
-    server.tool(
-      'create_role',
-      'Create a new Discord role',
-      {
-        name: z.string().min(1).max(100),
-        color: z.number().int().min(0).max(16777215).optional(),
-        hoist: z.boolean().optional(),
-        mentionable: z.boolean().optional(),
-      },
-      async ({
-        name,
-        color,
-        hoist,
-        mentionable,
-      }) => {
-        const { guildId } = getConfig()
+    return result(data)  
+  }  
+)  
 
-        const body: Record<string, unknown> = { name }
+server.tool(  
+  'delete_channel',  
+  'Delete a Discord channel or category',  
+  {  
+    channel_id: z.string().describe('Channel or category ID'),  
+  },  
+  async ({ channel_id }) => {  
+    const data = await discord(`/channels/${channel_id}`, {  
+      method: 'DELETE',  
+    })  
 
-        if (color !== undefined) body.color = color
-        if (hoist !== undefined) body.hoist = hoist
-        if (mentionable !== undefined) {
-          body.mentionable = mentionable
-        }
+    return result(data)  
+  }  
+)  
 
-        return result(
-          await discord(`/guilds/${guildId}/roles`, {
-            method: 'POST',
-            body: JSON.stringify(body),
-          })
-        )
-      }
-    )
+// =========================  
+// ROLES  
+// =========================  
 
-    server.tool(
-      'edit_role',
-      'Edit an existing Discord role',
-      {
-        role_id: z.string(),
-        name: z.string().optional(),
-        color: z.number().int().min(0).max(16777215).optional(),
-        hoist: z.boolean().optional(),
-        mentionable: z.boolean().optional(),
-      },
-      async ({
-        role_id,
-        name,
-        color,
-        hoist,
-        mentionable,
-      }) => {
-        const body: Record<string, unknown> = {}
+server.tool(  
+  'list_roles',  
+  'List all roles in the Discord server',  
+  {},  
+  async () => {  
+    const { guildId } = getConfig()  
+    const data = await discord(`/guilds/${guildId}/roles`)  
+    return result(data)  
+  }  
+)  
 
-        if (name !== undefined) body.name = name
-        if (color !== undefined) body.color = color
-        if (hoist !== undefined) body.hoist = hoist
-        if (mentionable !== undefined) {
-          body.mentionable = mentionable
-        }
+server.tool(  
+  'create_role',  
+  'Create a new Discord role',  
+  {  
+    name: z.string().min(1).max(100).describe('Role name'),  
+    color: z  
+      .number()  
+      .int()  
+      .min(0)  
+      .max(16777215)  
+      .optional()  
+      .describe('Decimal RGB color'),  
+    hoist: z  
+      .boolean()  
+      .optional()  
+      .describe('Show role separately in member list'),  
+    mentionable: z  
+      .boolean()  
+      .optional()  
+      .describe('Allow this role to be mentioned'),  
+  },  
+  async ({ name, color, hoist, mentionable }) => {  
+    const { guildId } = getConfig()  
 
-        return result(
-          await discord(`/guilds/${getConfig().guildId}/roles/${role_id}`, {
-            method: 'PATCH',
-            body: JSON.stringify(body),
-          })
-        )
-      }
-    )
+    const body: Record<string, unknown> = { name }  
 
-    server.tool(
-      'delete_role',
-      'Delete a Discord role',
-      {
-        role_id: z.string(),
-      },
-      async ({ role_id }) => {
-        return result(
-          await discord(
-            `/guilds/${getConfig().guildId}/roles/${role_id}`,
-            {
-              method: 'DELETE',
-            }
-          )
-        )
-      }
-    )
-  },
-  {},
-  {
-    basePath: '/',
-    maxDuration: 60,
-    verboseLogs: true,
-  }
+    if (color !== undefined) body.color = color  
+    if (hoist !== undefined) body.hoist = hoist  
+    if (mentionable !== undefined) body.mentionable = mentionable  
+
+    const data = await discord(`/guilds/${guildId}/roles`, {  
+      method: 'POST',  
+      body: JSON.stringify(body),  
+    })  
+
+    return result(data)  
+  }  
+)  
+
+server.tool(  
+  'edit_role',  
+  'Edit an existing Discord role',  
+  {  
+    role_id: z.string().describe('Role ID'),  
+    name: z.string().optional().describe('New role name'),  
+    color: z  
+      .number()  
+      .int()  
+      .min(0)  
+      .max(16777215)  
+      .optional()  
+      .describe('Decimal RGB color'),  
+    hoist: z.boolean().optional(),  
+    mentionable: z.boolean().optional(),  
+  },  
+  async ({  
+    role_id,  
+    name,  
+    color,  
+    hoist,  
+    mentionable,  
+  }) => {  
+    const { guildId } = getConfig()  
+
+    const body: Record<string, unknown> = {}  
+
+    if (name !== undefined) body.name = name  
+    if (color !== undefined) body.color = color  
+    if (hoist !== undefined) body.hoist = hoist  
+    if (mentionable !== undefined) body.mentionable = mentionable  
+
+    const data = await discord(  
+      `/guilds/${guildId}/roles/${role_id}`,  
+      {  
+        method: 'PATCH',  
+        body: JSON.stringify(body),  
+      }  
+    )  
+
+    return result(data)  
+  }  
+)  
+
+server.tool(  
+  'delete_role',  
+  'Delete a Discord role',  
+  {  
+    role_id: z.string().describe('Role ID'),  
+  },  
+  async ({ role_id }) => {  
+    const { guildId } = getConfig()  
+
+    const data = await discord(  
+      `/guilds/${guildId}/roles/${role_id}`,  
+      {  
+        method: 'DELETE',  
+      }  
+    )  
+
+    return result(data)  
+  }  
 )
 
-/* =========================================================
-   MCP AUTH
-   ========================================================= */
-
-const verifyToken = async (
-  req: Request,
-  bearerToken?: string
-): Promise<AuthInfo | undefined> => {
-  if (!bearerToken) return undefined
-
-  /*
-   * Temporary validation.
-   *
-   * IMPORTANT:
-   * Do NOT put the Discord Client Secret in this file.
-   *
-   * This is only the MCP bearer-token validation layer.
-   * Discord OAuth2 verification will be connected separately.
-   */
-
-  const expectedToken = process.env.MCP_AUTH_TOKEN
-
-  if (!expectedToken) {
-    return undefined
-  }
-
-  if (bearerToken !== expectedToken) {
-    return undefined
-  }
-
-  return {
-    token: bearerToken,
-    scopes: ['discord'],
-    clientId: 'discord-mcp-client',
-    extra: {
-      authenticated: true,
-    },
-  }
+},
+{},
+{
+basePath: '/',
+maxDuration: 60,
+verboseLogs: true,
 }
-
-const authHandler = withMcpAuth(
-  handler,
-  verifyToken,
-  {
-    required: true,
-    requiredScopes: ['discord'],
-    resourceMetadataPath:
-      '/.well-known/oauth-protected-resource',
-  }
 )
-
-/* =========================================================
-   ROUTES
-   ========================================================= */
 
 app.all('/mcp/*', async (c) => {
-  return await authHandler(c.req.raw)
+return await handler(c.req.raw)
 })
 
 app.get('/', (c) => {
-  return c.json({
-    message: 'Discord Management MCP Server',
-    mcp: '/mcp',
-    authentication: 'OAuth/Bearer protected',
-    tools: [
-      'get_server',
-      'list_channels',
-      'create_category',
-      'create_text_channel',
-      'create_voice_channel',
-      'edit_channel',
-      'delete_channel',
-      'list_roles',
-      'create_role',
-      'edit_role',
-      'delete_role',
-    ],
-  })
+return c.json({
+message: 'Discord Management MCP Server',
+mcp: '/mcp',
+tools: [
+'get_server',
+'list_channels',
+'create_category',
+'create_text_channel',
+'create_voice_channel',
+'edit_channel',
+'delete_channel',
+'list_roles',
+'create_role',
+'edit_role',
+'delete_role',
+],
+})
 })
 
 export default app
