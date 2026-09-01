@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc --noEmit"
   },
+
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.3",
     "hono": "^4.9.2",
